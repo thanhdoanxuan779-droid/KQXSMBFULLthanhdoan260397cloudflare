@@ -1008,10 +1008,6 @@ button{border:0;outline:0}
 
   </div>
 
-  <button type="button" class="open-input" id="openInput">
-    NHẬP DỮ LIỆU
-  </button>
-
   <div class="cau-main">
 
     <div class="position-column">
@@ -1219,42 +1215,6 @@ button{border:0;outline:0}
 
 </section>
 
-<section id="inputScreen">
-
-  <div class="input-header">
-
-    <div class="input-header-title">
-      NHẬP DỮ LIỆU
-    </div>
-
-    <button type="button" class="input-close" id="closeInput">
-      ĐÓNG
-    </button>
-
-  </div>
-
-  <div class="input-area">
-
-    <div class="input-titles">
-
-      <div class="input-title">NGÀY</div>
-      <div class="input-title">GIẢI ĐẶC BIỆT</div>
-      <div class="input-title">GIẢI NHẤT</div>
-
-    </div>
-
-    <div class="input-scroll">
-
-      <div class="input-grid" id="inputGrid"></div>
-
-    </div>
-
-
-
-  </div>
-
-</section>
-
 </div>
 
 <script>
@@ -1341,9 +1301,6 @@ const stationScreen=
 const cauScreen=
   document.getElementById("cauScreen");
 
-const inputScreen=
-  document.getElementById("inputScreen");
-
 const stationGrid=
   document.getElementById("stationGrid");
 
@@ -1387,6 +1344,7 @@ const predictStats=
   document.getElementById("predictStats");
 
 let prediction="";
+let cauResizeHandler=null;
 
 /* =====================================================
    STORAGE
@@ -1437,7 +1395,7 @@ function saveAll(data){
     );
 
     localStorage.setItem(
-      STORAGE_KEY,
+      STORE_KEY,
       text
     );
 
@@ -1625,6 +1583,28 @@ function addOnlineResult(data,item){
    HỖ TRỢ DỮ LIỆU WORKER
 ===================================================== */
 
+function isValidISODate(value){
+  const match=String(value||"").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!match) return false;
+
+  const year=Number(match[1]);
+  const month=Number(match[2]);
+  const day=Number(match[3]);
+  const date=new Date(0);
+  date.setUTCHours(0,0,0,0);
+  date.setUTCFullYear(year,month-1,day);
+
+  return date.getUTCFullYear()===year &&
+    date.getUTCMonth()===month-1 &&
+    date.getUTCDate()===day;
+}
+
+function formatDateForDisplay(isoDate){
+  return isValidISODate(isoDate)
+    ?String(isoDate).split("-").reverse().join("/")
+    :"";
+}
+
 function workerDateToIso(date){
 
   const s=String(date||"").trim();
@@ -1640,11 +1620,13 @@ function workerDateToIso(date){
 
   if(m){
 
-    return (
+    const isoDate=(
       m[1]+"-"+
       String(m[2]).padStart(2,"0")+"-"+
       String(m[3]).padStart(2,"0")
     );
+
+    return isValidISODate(isoDate) ? isoDate : "";
 
   }
 
@@ -1655,11 +1637,13 @@ function workerDateToIso(date){
 
   if(m){
 
-    return (
+    const isoDate=(
       m[3]+"-"+
       String(m[2]).padStart(2,"0")+"-"+
       String(m[1]).padStart(2,"0")
     );
+
+    return isValidISODate(isoDate) ? isoDate : "";
 
   }
 
@@ -2634,43 +2618,10 @@ function ensureCurrent(){
   }
 
 
-  /*
-   * =====================================================
-   * KHÔNG CÓ ONLINE
-   * Giữ dữ liệu local cũ.
-   * =====================================================
-   */
-
-  function sortLocal(list){
-
-    return (
-      Array.isArray(list)
-        ?list
-        :[]
-    )
-    .filter(function(item){
-
-      return item &&
-        /^\d{4}-\d{2}-\d{2}$/.test(
-          String(item.sourceDate||"")
-        );
-
-    })
-    .sort(function(a,b){
-
-      return String(b.sourceDate)
-        .localeCompare(
-          String(a.sourceDate)
-        );
-
-    });
-
-  }
-
-
+  /* Không có dữ liệu online thì không hiển thị dữ liệu local/thủ công. */
   return {
-    db:sortLocal(current.db),
-    g1:sortLocal(current.g1)
+    db:[],
+    g1:[]
   };
 
 }
@@ -2798,9 +2749,6 @@ function openStation(day,station){
   cauScreen.style.display=
     "flex";
 
-  inputScreen.style.display=
-    "none";
-
   updateRegionPositionButtons();
 
   document
@@ -2858,9 +2806,6 @@ document
       }
 
       cauScreen.style.display=
-        "none";
-
-      inputScreen.style.display=
         "none";
 
       stationScreen.style.display=
@@ -2984,17 +2929,15 @@ function renderHistory(box,list){
       item.sourceDateText||
       "";
 
-    row.innerHTML=`
+    const dateNode=document.createElement("span");
+    dateNode.className="history-date";
+    dateNode.textContent=date;
 
-      <span class="history-date">
-        ${date}
-      </span>
+    const numberNode=document.createElement("span");
+    numberNode.className="history-number";
+    numberNode.textContent=String(item.number||"");
 
-      <span class="history-number">
-        ${item.number}
-      </span>
-
-    `;
+    row.append(dateNode,numberNode);
 
     box.appendChild(row);
 
@@ -4013,6 +3956,11 @@ predictT.addEventListener(
 
 function drawCau(){
 
+  if(cauResizeHandler){
+    window.removeEventListener("resize",cauResizeHandler);
+    cauResizeHandler=null;
+  }
+
   updatePredictionButtons();
 
   if(currentType==="tx"){
@@ -4294,7 +4242,8 @@ function drawCau(){
   }
 
   boardWrap.addEventListener("scroll",updateCauScrollbar,{passive:true});
-  window.addEventListener("resize",updateCauScrollbar);
+  cauResizeHandler=updateCauScrollbar;
+  window.addEventListener("resize",cauResizeHandler);
 
   /* Kéo trực tiếp vào con lăn. */
   let barDragStartX=0;
@@ -4511,52 +4460,6 @@ function makeCell(value){
   return cell;
 
 }
-
-/* =====================================================
-   MỞ NHẬP
-===================================================== */
-
-document
-  .getElementById("openInput")
-  .addEventListener(
-    "click",
-    ()=>{
-
-      cauScreen.style.display=
-        "none";
-
-      inputScreen.style.display=
-        "flex";
-
-      renderInputLists();
-
-    }
-  );
-
-/* =====================================================
-   ĐÓNG NHẬP
-===================================================== */
-
-document
-  .getElementById("closeInput")
-  .addEventListener(
-    "click",
-    ()=>{
-
-      if(document.activeElement){
-        document.activeElement.blur();
-      }
-
-      inputScreen.style.display=
-        "none";
-
-      cauScreen.style.display=
-        "flex";
-
-      loadLatest();
-
-    }
-  );
 
 /* =====================================================
    TẠO ROW
@@ -5085,7 +4988,7 @@ function pasteNumbers(
 
       }
 
-      if(item.locked===true){
+      if(item.online===true){
         return;
       }
 
@@ -5129,11 +5032,22 @@ function createDateInputRow(
   input.dataset.rowId=
     row.rowId||"";
 
-  input.value=
-    row.db?.sourceDateText ||
-    row.g1?.sourceDateText ||
+  const existingIso=
     row.db?.sourceDate ||
     row.g1?.sourceDate ||
+    "";
+
+  const existingText=
+    row.db?.sourceDateText ||
+    row.g1?.sourceDateText ||
+    "";
+
+  const existingTextIso=
+    normalizeDate(existingText);
+
+  input.value=
+    formatDateForDisplay(existingIso) ||
+    formatDateForDisplay(existingTextIso) ||
     "";
 
   function normalizeDate(value){
@@ -5142,31 +5056,36 @@ function createDateInputRow(
       String(value||"")
         .trim();
 
-    const m=
-      s.match(
-        /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/
-      );
+    let year;
+    let month;
+    let day;
 
-    if(!m){
-      return "";
+    const isoMatch=
+      s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+
+    if(isoMatch){
+      year=isoMatch[1];
+      month=isoMatch[2];
+      day=isoMatch[3];
+    }else{
+      const displayMatch=
+        s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+
+      if(!displayMatch){
+        return "";
+      }
+
+      day=displayMatch[1];
+      month=displayMatch[2];
+      year=displayMatch[3];
     }
 
-    const day=
-      m[1].padStart(2,"0");
+    const isoDate=
+      String(year).padStart(4,"0")+"-"+
+      String(month).padStart(2,"0")+"-"+
+      String(day).padStart(2,"0");
 
-    const month=
-      m[2].padStart(2,"0");
-
-    const year=
-      m[3];
-
-    return(
-      day+
-      "-"+
-      month+
-      "-"+
-      year
-    );
+    return isValidISODate(isoDate) ? isoDate : "";
 
   }
 
@@ -5235,25 +5154,8 @@ function createDateInputRow(
         item.sourceDate=
           date;
 
-        if(date){
-
-          const parts=
-            date.split("-");
-
-          if(parts.length===3){
-
-            item.sourceDateText=
-              parts[2]+"/"+
-              parts[1]+"/"+
-              parts[0];
-
-          }
-
-        }else{
-
-          item.sourceDateText="";
-
-        }
+        item.sourceDateText=
+          formatDateForDisplay(date);
 
       }
 
@@ -5387,17 +5289,8 @@ function createDateInputRow(
           return;
         }
 
-        const parts=
-          date.split("-");
-
         const displayDate=
-          parts.length===3
-            ?(
-              parts[2]+"/"+
-              parts[1]+"/"+
-              parts[0]
-            )
-            :"";
+          formatDateForDisplay(date);
 
         [
           ...data.db,
@@ -5457,7 +5350,7 @@ function createDateInputRow(
           dates[0];
 
         input.value=
-          date;
+          formatDateForDisplay(date);
 
         saveSingleDate(date);
 
@@ -5529,7 +5422,7 @@ function createDateInputRow(
       if(dates.length===1){
 
         input.value=
-          dates[0];
+          formatDateForDisplay(dates[0]);
 
         saveSingleDate(
           dates[0]
@@ -5569,7 +5462,7 @@ function createDateInputRow(
       }
 
       input.value=
-        date;
+        formatDateForDisplay(date);
 
       saveSingleDate(
         date
@@ -6056,7 +5949,7 @@ function updateItem(
     return;
   }
 
-  if(item.locked===true){
+  if(item.online===true){
     return;
   }
 
@@ -6159,7 +6052,7 @@ function addNumber(
 
   if(existing){
 
-    if(existing.locked===true){
+    if(existing.online===true){
       return;
     }
 
